@@ -562,3 +562,4 @@ Changes (made without a toolchain, check the build first):
 - v13b: walls are plotted row by row (the v10.5 row-pair trick made every wall pixel 2x2: 112 x 52 effective resolution); `ROM_REGION := 2` (PAL header) in the Makefile; close enemies keep their own OBJ palette (the blend toward the BG colours was built for the 4 bpp view and painted them as one dark colour).
 - A screenshot of v13 showed the right ~25% of the view black: only ~21 of 28 columns reached VRAM. 21 columns = 17.5 KB = exactly the NTSC blank time, so that run was NTSC (emulator region / header). The view needs PAL.
 # Vectron-Space
+# Vectron-Space
