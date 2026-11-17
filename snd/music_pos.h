@@ -1,0 +1,2 @@
+#define MUS_POS_CALM 0
+#define MUS_POS_BATTLE 11

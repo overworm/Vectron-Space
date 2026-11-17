@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vectron Map Editor</title>
+<style>
+:root{--bg:#14161c;--pn:#1d2029;--ln:#333846;--tx:#d9deea;--ac:#4fc3f7;--ok:#6fd38a;--er:#ff6b6b;--wn:#ffd166}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:13px/1.35 system-ui,sans-serif;display:grid;grid-template-columns:230px 1fr 290px;height:100vh}
+aside{background:var(--pn);overflow:auto;padding:10px;border-right:1px solid var(--ln)}aside.r{border-right:0;border-left:1px solid var(--ln)}
+h3{margin:12px 0 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8d96ad}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}.grid.g3{grid-template-columns:repeat(3,1fr)}
+.t{border:2px solid var(--ln);border-radius:4px;background:#0e1016;color:var(--tx);cursor:pointer;padding:0;height:40px;display:flex;align-items:center;justify-content:center;font-size:11px;overflow:hidden;position:relative}
+.t img{width:100%;height:100%;image-rendering:pixelated;object-fit:cover}.t.sel{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+.t span{position:absolute;right:2px;bottom:0;font-size:10px;text-shadow:0 0 3px #000}
+.list{display:flex;flex-direction:column;gap:3px}.list .t{height:auto;padding:4px 6px;justify-content:flex-start;gap:6px}
+button,select,input[type=text]{background:#0e1016;color:var(--tx);border:1px solid var(--ln);border-radius:4px;padding:5px 8px;font:inherit}
+button{cursor:pointer}button:hover{border-color:var(--ac)}button.p{background:var(--ac);color:#04212e;border-color:var(--ac);font-weight:600}
+main{overflow:auto;position:relative;background:#0b0d12}canvas{display:block;image-rendering:pixelated;cursor:crosshair;margin:12px}
+#bar{position:sticky;top:0;left:0;background:#0b0d12e8;padding:6px 12px;border-bottom:1px solid var(--ln);display:flex;gap:10px;align-items:center;z-index:2}
+#chk div{padding:3px 6px;border-radius:3px;margin:3px 0;font-size:12px}.ok{background:#173a24}.error{background:#4a1d1d}.warn{background:#4a3b13}
+label{display:block;margin:6px 0 2px;color:#8d96ad;font-size:11px}select,input[type=text]{width:100%}
+.row{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap}.sw{width:12px;height:12px;border-radius:50%;display:inline-block}
+#mod{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;z-index:10}
+#mod .box{background:var(--pn);border:1px solid var(--ln);border-radius:8px;width:min(920px,94vw);height:min(640px,90vh);display:flex;flex-direction:column;padding:12px;gap:8px}
+#tabs{display:flex;gap:4px;flex-wrap:wrap}#tabs button.on{background:var(--ac);color:#04212e;border-color:var(--ac)}
+#tgrid{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;align-content:start}
+#tgrid .t{height:92px;flex-direction:column}#tgrid .t img{height:70px}#tgrid .t small{font-size:10px;color:#8d96ad;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%}
+.pick{width:56px;height:56px;flex:none}
+@media(max-width:900px){body{grid-template-columns:1fr;height:auto}aside{border:0}}
+</style></head><body>
+<aside>
+ <h3>Tiles</h3><div class="grid" id="tiles"></div>
+ <h3>Special floor</h3><div class="list" id="fkp"></div>
+ <h3>Floor paint</h3><div class="grid" id="fpal"></div>
+ <h3>Doors</h3><div class="grid" id="doors"></div>
+ <h3>Items</h3><div class="list" id="items"></div>
+ <h3>Enemy spawns</h3><div class="list" id="spawns"></div>
+ <h3>Enemy room waves</h3><div id="rwp" style="font-size:12px"></div>
+ <h3>Markers</h3><div class="list" id="marks"></div>
+ <p style="color:#8d96ad;font-size:11px">Left mouse: place / paint (Shift = fill rectangle). Right mouse: remove an object or clear a tile. Ctrl+Z undo.</p>
+</aside>
+<main><div id="bar"><b>Stage</b><select id="stage"></select><span id="pos" style="color:#8d96ad"></span><span style="flex:1"></span>
+ <button id="bUndo">Undo</button><button id="bVal">Validate</button><button id="bPlay" title="walk through the map in 3D (a window opens on this computer)">Play 3D</button><button class="p" id="bSave">Save map</button></div>
+ <canvas id="cv"></canvas></main>
+<aside class="r">
+ <h3>Map</h3><label>Name</label><input type="text" id="name">
+ <h3>Level type</h3>
+ <label style="display:flex;gap:6px;align-items:center;color:var(--tx);font-size:12px"><input type="checkbox" id="open"> Open level (sky instead of a ceiling)</label>
+ <div id="skyBox">
+  <label>Sky texture</label><div class="row"><div class="t pick" id="skyPick"></div><button id="skyClr">none</button></div>
+  <label>Sky colour (when no texture)</label><input type="color" id="skyCol" style="width:100%;height:28px;background:#0e1016;border:1px solid var(--ln)">
+ </div>
+ <h3>Floor and ceiling</h3>
+ <label>Floor texture</label><div class="row"><div class="t pick" id="floorPick"></div><button id="floorClr">built in</button></div>
+ <div id="ceilBox"><label>Ceiling texture</label><div class="row"><div class="t pick" id="ceilPick"></div><button id="ceilClr">built in</button></div></div>
+ <h3>Hazard zones</h3>
+ <div style="font-size:11px;color:#8d96ad">Every block of connected lava / electro water / hidden wall tiles is a zone, numbered 1, 2, ... (shown on the map; hover a tile to outline its zone). A trigger switches off only the zone set in this field (0 = every zone of its kind). To change an existing trigger: pick its item tool and click on it (it takes the number in the field), or change the number right after placing / clicking it.</div>
+ <label>New trigger: target zone <input id="trgZ" type="number" min="0" max="8" value="0" style="width:42px"></label>
+ <h3>Level look</h3>
+ <label>Brightness <b id="brV">100</b>%</label><input type="range" id="brS" min="40" max="200" value="100" style="width:100%">
+ <label>Palette (hue) <b id="huV">0</b>&deg;</label><input type="range" id="huS" min="-180" max="180" value="0" style="width:100%">
+ <div style="font-size:11px;color:#8d96ad">Applied to walls, floor, sprites, enemies and the boss of this level when the ROM is built. The preview here is approximate.</div>
+ <h3>Floor set (paint floors per tile)</h3>
+ <div class="grid" id="floorSet"></div>
+ <div class="row"><button id="fsAdd">Add floor texture...</button><button id="fsClear">Clear floor paint</button></div>
+ <p style="color:#8d96ad;font-size:11px">Liquids, sand, stone...: add up to 8 textures, then use "Floor paint" on the left. Walls and doors are not changed.</p>
+ <h3>Wall textures (ids 1-9)</h3>
+ <div id="wallOver"></div>
+ <div class="row"><button id="upTex">Texture library / upload...</button></div>
+ <p style="color:#8d96ad;font-size:11px">PNG or JPG, any size (made square and reduced to 16x16 texel classes by the build). Click a picture to choose another texture for that wall id.</p>
+ <h3>Music</h3>
+ <label>Calm (background)</label><select id="mCalm"></select>
+ <label>Action (enemies)</label><select id="mAction"></select>
+ <label>Boss</label><select id="mBoss"></select>
+ <div class="row"><button id="upMus">Upload .xm / .s3m...</button></div>
+ <h3>Briefing picture</h3>
+ <select id="brief"></select>
+ <div class="row"><button id="upBrief">Upload picture...</button></div>
+ <p style="color:#8d96ad;font-size:11px">Shown after "STAGE X". None = the game starts right after it. Scaled to 256 x 144.</p>
+ <h3>File</h3>
+ <div class="row"><button id="bDown">Download JSON</button><button id="bLoad">Load JSON...</button></div>
+ <h3>Checks</h3><div id="chk"></div>
+</aside>
+<input type="file" id="file" style="display:none">
+<div id="mod"><div class="box"><div class="row" style="margin:0;align-items:center"><b>Texture library</b><select id="tTarget" title="where a clicked texture goes" style="width:150px"></select><span id="tMsg" style="color:#4fe3ff;font-size:12px"></span><input type="text" id="tq" placeholder="search..." style="width:160px"><span style="flex:1"></span>
+ <select id="upCat" style="width:110px"></select><button id="tUp">Upload image...</button><button id="tZip">Upload ZIP...</button><button id="tClose">Close</button></div>
+ <div id="tabs"></div><div id="tgrid"></div>
+ <div style="color:#8d96ad;font-size:11px">A ZIP keeps its folders as categories (sky, space, scifi, ship, stone, acid, lava, water, sand...). Pictures sit in maps/textures/&lt;category&gt;/.</div></div></div>
+<script>
+const W=32,H=64,C=14,KIND_COL={18:'#ff5a1f',19:'#2f7bff',20:'#c040ff',21:'#4fe3ff',0:'#4fe3ff',1:'#7dff7d',2:'#4f7bff',3:'#ffe14f',4:'#ff5a4f',5:'#c9c9c9',6:'#7dff7d',7:'#ffffff',8:'#7dff7d',12:'#ff9a3c',13:'#4fd0ff',14:'#b04fff',15:'#ffd84f',16:'#ff4f4f',17:'#ffb74f'};
+const DOORCOL=['#9aa4b8','#4f7bff','#ffe14f','#ff5a4f','#ff7bd5'],DOORNAME=['auto','blue card','yellow card','red card','TR gate'];
+const FKCOL={1:'#6fd38a',2:'#ff5a1f',3:'#7dff3c',4:'#2f7bff',5:'#4fb8ff',6:'#7a2cff',7:'#e8ff3c',8:'#ff4fd8'};
+const TPCOL=['#4fe3ff','#ffb74f','#ff7bd5','#b0ff4f'];
+const ROOMCOL={1:'#ff9a3c',2:'#4fe3ff'};
+let tpPend=null,m,lib,tool={t:'tile',v:1},undo=[],imgs={},stage=1,drag=null;
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');cv.width=W*C;cv.height=H*C;
+const $=id=>document.getElementById(id);
+function snap(){undo.push(JSON.stringify(m));if(undo.length>60)undo.shift()}
+function img(src){if(!imgs[src]){const i=new Image();i.onload=draw;i.src=src;imgs[src]=i}return imgs[src]}
+function btn(par,html,sel,fn,cls){const b=document.createElement('button');b.className='t'+(cls?' '+cls:'');b.innerHTML=html;b.onclick=()=>{fn();refreshSel()};b.dataset.k=sel;par.appendChild(b);return b}
+function setTool(t){tool=t;refreshSel()}
+const key=t=>JSON.stringify(t);
+function refreshSel(){document.querySelectorAll('aside:not(.r) .t').forEach(b=>b.classList.toggle('sel',b.dataset.k===key(tool)))}
+async function api(p,o){const r=await fetch(p,o);return r.json()}
+async function init(){
+ lib=await api('/api/lib');
+ const st=$('stage');for(let i=1;i<=6;i++){const o=document.createElement('option');o.value=i;o.textContent='Stage '+i+(lib.stages.includes(i)?' (saved)':'');st.appendChild(o)}
+ st.onchange=()=>loadStage(+st.value);
+ // palette
+ const tl=$('tiles');btn(tl,'floor',key({t:'tile',v:0}),()=>setTool({t:'tile',v:0}));
+ for(let i=1;i<=9;i++)btn(tl,`<img id="tw${i}" src="/tex/wall_${i}.png"><span>${i}</span>`,key({t:'tile',v:i}),()=>setTool({t:'tile',v:i}));
+ const dr=$('doors');for(let k=0;k<5;k++)btn(dr,`<div style="width:100%;height:100%;background:${DOORCOL[k]}"></div><span style="color:#000">${k==4?'TR':k==0?'A':'K'+k}</span>`,key({t:'tile',v:10+k}),()=>setTool({t:'tile',v:10+k}));
+ for(const k in lib.items)btn($('items'),`<i class="sw" style="background:${KIND_COL[k]||'#fff'}"></i>${lib.items[k]}`,key({t:'item',k:+k}),()=>setTool({t:'item',k:+k}));
+ for(const c in lib.classes)btn($('spawns'),`<b>${+c+1}</b> ${lib.classes[c]}`,key({t:'spawn',c:+c}),()=>setTool({t:'spawn',c:+c}));
+ for(const k in lib.fkinds)btn($('fkp'),`<i class="sw" style="background:${FKCOL[k]}"></i>${lib.fkinds[k]}`,key({t:'fk',v:+k}),()=>setTool({t:'fk',v:+k}));
+ btn($('fkp'),'<i class="sw" style="background:#4fe3ff"></i>teleport pair (click IN, then OUT)',key({t:'tp'}),()=>{tpPend=null;setTool({t:'tp'})});
+ btn($('fkp'),'clear special floor',key({t:'fk',v:0}),()=>setTool({t:'fk',v:0}));
+ const mk=$('marks');
+ [['Start point','start'],['Exit zone (drag)','exit'],['TR button','plate'],['"LOOK" wall text','look'],['Ghost spawn (class 6)','ghost'],['Arena room: crystal (drag)','room1'],['Arena room: 2 s pause (drag)','room2'],['Eraser','erase']].forEach(([n,k])=>btn(mk,n,key({t:k}),()=>setTool({t:k})));
+ await loadStage(1);
+ // uploads
+ const up=(id,kind,after)=>{$(id).onclick=()=>{const f=$('file');f.accept=kind=='music'?'.xm,.s3m':'image/*';f.onchange=async()=>{const x=f.files[0];if(!x)return;const r=await api(`/api/upload?kind=${kind}&name=${encodeURIComponent(x.name)}`,{method:'POST',body:await x.arrayBuffer()});if(r.error)alert(r.error);else{lib=await api('/api/lib');after&&after(r.saved);buildSide()}f.value=''};f.click()}};
+ up('upMus','music');up('upBrief','briefing',s=>{m.briefing=s});
+ $('upTex').onclick=()=>openPicker(null);
+ $('tTarget').onchange=()=>{};
+ $('tClose').onclick=()=>{$('mod').style.display='none'};
+ $('tq').oninput=pickGrid;
+ $('tUp').onclick=()=>{const f=$('file');f.accept='image/*';f.multiple=true;f.onchange=async()=>{for(const x of f.files){const r=await api(`/api/upload?kind=texture&cat=${$('upCat').value}&name=${encodeURIComponent(x.name)}`,{method:'POST',body:await x.arrayBuffer()});if(r.error)alert(x.name+': '+r.error)}f.multiple=false;f.value='';lib=await api('/api/lib');pickTabs()};f.click()};
+ $('tZip').onclick=()=>{const f=$('file');f.accept='.zip';f.onchange=async()=>{const x=f.files[0];if(!x)return;const r=await api(`/api/upload?kind=texzip&cat=${$('upCat').value}&name=${encodeURIComponent(x.name)}`,{method:'POST',body:await x.arrayBuffer()});if(r.error)alert(r.error);else alert('added '+r.saved);f.value='';lib=await api('/api/lib');pickTabs()};f.click()};
+ $('open').onchange=e=>{snap();m.open=e.target.checked;buildSide();draw()};
+ $('skyCol').oninput=e=>{m.sky_color=e.target.value};
+ cv.addEventListener('mousemove',hoverZone);
+ $('trgZ').onchange=()=>{const i=selTrg;if(i>=0&&m.items[i]&&m.items[i][0]>=18){m.items[i][3]=Math.max(0,Math.min(8,+$('trgZ').value||0));draw()}};
+ $('brS').oninput=lookPrev;$('huS').oninput=lookPrev;
+ $('skyClr').onclick=()=>{snap();m.sky_tex_file=null;buildSide()};
+ $('floorClr').onclick=()=>{snap();m.floor_tex_file=null;buildSide()};
+ $('ceilClr').onclick=()=>{snap();m.ceil_tex_file=null;buildSide()};
+ $('skyPick').onclick=()=>openPicker(p=>{snap();m.sky_tex_file=p;buildSide()},'sky');
+ $('floorPick').onclick=()=>openPicker(p=>{snap();m.floor_tex_file=p;buildSide()});
+ $('ceilPick').onclick=()=>openPicker(p=>{snap();m.ceil_tex_file=p;buildSide()});
+ $('fsAdd').onclick=()=>openPicker(p=>{if((m.floor_set||[]).length>=8){alert('at most 8');return}snap();m.floor_set=(m.floor_set||[]);if(!m.floor_set.includes(p))m.floor_set.push(p);buildSide();setTool({t:'fl',v:m.floor_set.indexOf(p)+1})});
+ $('fsClear').onclick=()=>{snap();m.floor_set=[];m.floor_tiles=null;if(tool.t=='fl')tool={t:'tile',v:1};buildSide();draw()};
+ $('name').oninput=e=>m.name=e.target.value;
+ $('bUndo').onclick=doUndo;$('bSave').onclick=save;$('bVal').onclick=validate;$('bPlay').onclick=async()=>{const r=await api('/api/play',{method:'POST',body:JSON.stringify(m)});show([['ok',r.started?'3D window started (it reloads when you press Play 3D again)':'3D window updated']])};
+ $('bDown').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/json'}));a.download='stage'+stage+'.json';a.click()};
+ $('bLoad').onclick=()=>{const f=$('file');f.accept='.json';f.onchange=async()=>{try{snap();m=JSON.parse(await f.files[0].text());buildSide();draw()}catch(e){alert('bad file: '+e)}f.value=''};f.click()};
+}
+async function loadStage(n){stage=n;m=await api('/api/map?stage='+n);undo=[];$('stage').value=n;buildSide();draw()}
+let pickCb=null,pickCat='all';
+function fillTargets(){const t=$('tTarget');const cur=tool.t=='tile'&&tool.v>=1&&tool.v<=9?'w'+tool.v:'w1';t.innerHTML='';for(let i=1;i<=9;i++)t.insertAdjacentHTML('beforeend',`<option value="w${i}">Apply to: wall ${i}</option>`);[['floor','Apply to: floor'],['ceil','Apply to: ceiling'],['sky','Apply to: sky'],['fset','Add to floor set']].forEach(([v,n])=>t.insertAdjacentHTML('beforeend',`<option value="${v}">${n}</option>`));t.value=cur}
+function applyTarget(p){const t=$('tTarget').value;snap();
+ if(t[0]=='w'&&t.length==2){m.wall_tex=m.wall_tex||{};m.wall_tex[t[1]]=p}
+ else if(t=='floor')m.floor_tex_file=p;else if(t=='ceil')m.ceil_tex_file=p;else if(t=='sky')m.sky_tex_file=p;
+ else if(t=='fset'){m.floor_set=m.floor_set||[];if(m.floor_set.length>=8){alert('at most 8');return}if(!m.floor_set.includes(p))m.floor_set.push(p)}
+ buildSide();draw();$('tMsg').textContent='set: '+t+' = '+p.replace('textures/','');}
+function openPicker(cb,cat){pickCb=cb;$('tTarget').style.display=cb?'none':'';$('tMsg').textContent='';if(!cb)fillTargets();pickCat=cat&&lib.cats.includes(cat)?cat:'all';$('mod').style.display='flex';$('tq').value='';$('upCat').innerHTML=lib.cats.map(c=>`<option>${c}</option>`).join('');pickTabs()}
+function pickTabs(){const t=$('tabs');t.innerHTML='';['all',...lib.cats].forEach(c=>{const n=c=='all'?lib.tex.length:lib.tex.filter(x=>x.cat==c).length;const b=document.createElement('button');b.textContent=c+' ('+n+')';b.className=c==pickCat?'on':'';b.onclick=()=>{pickCat=c;$('upCat').value=c=='all'?'misc':c;pickTabs()};t.appendChild(b)});pickGrid()}
+function pickGrid(){const g=$('tgrid'),q=$('tq').value.toLowerCase();g.innerHTML='';
+ lib.tex.filter(x=>(pickCat=='all'||x.cat==pickCat)&&x.name.toLowerCase().includes(q)).forEach(x=>{const d=document.createElement('div');d.className='t';d.innerHTML=`<img src="/maps/${x.path}" loading="lazy"><small title="${x.cat}/${x.name}">${x.name}</small>`;d.onclick=()=>{if(pickCb){const cb=pickCb;$('mod').style.display='none';cb(x.path)}else applyTarget(x.path)};g.appendChild(d)});
+ if(!g.children.length)g.innerHTML='<div style="color:#8d96ad;padding:12px">No textures here yet. Use "Upload image" or "Upload ZIP".</div>'}
+const thumb=(el,path,fb)=>{el.innerHTML=path?`<img src="/maps/${path}">`:fb};
+function opts(sel,list,cur,def){sel.innerHTML='';const o=document.createElement('option');o.value='lib:'+def;o.textContent=def+' (built in)';sel.appendChild(o);list.forEach(f=>{const q=document.createElement('option');q.value='file:'+f;q.textContent=f;sel.appendChild(q)});sel.value=cur||'lib:'+def;if(sel.value!==(cur||'lib:'+def))sel.value='lib:'+def}
+let hz=null,selTrg=-1;
+function zones(){                       // connected blocks of the kinds 2 / 4 / 8, numbered per kind in scan order (same as gen_level.py)
+ const Z={},N={2:0,4:0,8:0},fk=m.floor_kind;if(!fk)return {Z,N};
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){const k=fk[y][x];if(N[k]==null||Z[y*W+x])continue;
+  N[k]++;const st=[[x,y]];Z[y*W+x]=N[k];
+  while(st.length){const [a,b]=st.pop();for(const [c,d] of [[a+1,b],[a-1,b],[a,b+1],[a,b-1]])if(c>=0&&d>=0&&c<W&&d<H&&fk[d][c]==k&&!Z[d*W+c]){Z[d*W+c]=N[k];st.push([c,d])}}}
+ return {Z,N};
+}
+function hoverZone(e){
+ if(!m||!m.floor_kind)return;const r=cv.getBoundingClientRect(),x=Math.floor((e.clientX-r.left)/r.width*W),y=Math.floor((e.clientY-r.top)/r.height*H);
+ let n=null;if(x>=0&&y>=0&&x<W&&y<H){const k=m.floor_kind[y][x],z=zones().Z[y*W+x];if(z)n={k,z}}
+ if(JSON.stringify(n)!==JSON.stringify(hz)){hz=n;draw()}
+}
+function lookPrev(){
+ const b=+$('brS').value,h=+$('huS').value;$('brV').textContent=b;$('huV').textContent=h;
+ m.brightness=b;m.hue=h;cv.style.filter=(b!=100||h)?`brightness(${b/100}) hue-rotate(${h}deg)`:'';
+}
+function buildSide(){
+ $('name').value=m.name||'';
+ for(let i=1;i<=9;i++){const e=$('tw'+i);if(e){const o=(m.wall_tex||{})[i];e.src=o?'/maps/'+o:'/tex/wall_'+i+'.png'}}
+ $('open').checked=!!m.open;$('skyBox').style.display=m.open?'block':'none';$('ceilBox').style.display=m.open?'none':'block';
+ $('skyCol').value=m.sky_color||'#4a8fd8';
+ $('brS').value=m.brightness==null?100:m.brightness;$('huS').value=m.hue||0;lookPrev();
+ thumb($('skyPick'),m.sky_tex_file,'<span style="font-size:10px;color:#8d96ad">pick</span>');
+ thumb($('floorPick'),m.floor_tex_file,`<img src="/tex/floor_${m.floor_tex||0}.png">`);
+ thumb($('ceilPick'),m.ceil_tex_file,m.ceil_tex==2?'panel':`<img src="/tex/floor_${m.ceil_tex||0}.png">`);
+ // floor set
+ const fl=$('floorSet');fl.innerHTML='';(m.floor_set=m.floor_set||[]).forEach((p,k)=>{const b=document.createElement('button');b.className='t';b.title=p;b.innerHTML=`<img src="/maps/${p}"><span>${k+1}</span>`;b.oncontextmenu=e=>{e.preventDefault();snap();m.floor_set.splice(k,1);if(m.floor_tiles)m.floor_tiles=m.floor_tiles.map(r=>r.map(v=>v==k+1?0:v>k+1?v-1:v));buildSide();draw()};fl.appendChild(b)});
+ const fp=$('fpal');fp.innerHTML='';btn(fp,'level floor',key({t:'fl',v:0}),()=>setTool({t:'fl',v:0}));
+ m.floor_set.forEach((p,k)=>btn(fp,`<img src="/maps/${p}"><span>${k+1}</span>`,key({t:'fl',v:k+1}),()=>setTool({t:'fl',v:k+1})));
+ refreshSel();
+ const wo=$('wallOver');wo.innerHTML='';
+ for(let i=1;i<=9;i++){const d=document.createElement('div');d.className='row';d.style.alignItems='center';
+  const cur=(m.wall_tex||{})[i]||'';
+  d.innerHTML=`<div class="t" style="width:44px;height:44px;flex:none;cursor:pointer"><img src="${cur?'/maps/'+cur:'/tex/wall_'+i+'.png'}" style="image-rendering:pixelated"></div><b style="width:14px">${i}</b><span style="flex:1;font-size:11px;color:#8d96ad;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cur?cur.replace('textures/',''):'built in'}</span>`;
+  d.firstChild.onclick=()=>openPicker(p=>{snap();m.wall_tex=m.wall_tex||{};m.wall_tex[i]=p;buildSide();draw()});
+  if(cur){const x=document.createElement('button');x.textContent='x';x.onclick=()=>{snap();delete m.wall_tex[i];buildSide();draw()};d.appendChild(x)}
+  wo.appendChild(d)}
+ const mus=lib.music.map(f=>f);m.music=m.music||{};
+ opts($('mCalm'),mus,m.music.calm,'State');opts($('mAction'),mus,m.music.action,'DUNE');opts($('mBoss'),mus,m.music.boss,'WIRED');
+ $('mCalm').onchange=e=>m.music.calm=e.target.value;$('mAction').onchange=e=>m.music.action=e.target.value;$('mBoss').onchange=e=>m.music.boss=e.target.value;
+ const b=$('brief');b.innerHTML='<option value="">none (start right after STAGE X)</option>'+lib.briefings.map(f=>`<option value="briefings/${f}">${f}</option>`).join('');b.value=m.briefing||'';b.onchange=()=>m.briefing=b.value||null;
+}
+function roomPanel(){
+ const rw=$('rwp');if(!rw)return;
+ const sig=JSON.stringify([m.rooms,m.spawns.map(s=>[s[0],s[1]|0,s[2]|0]),m.spawn_mult]);
+ if(sig===roomPanel.sig)return;roomPanel.sig=sig;
+ if(m.spawn_mult==null)m.spawn_mult=1;
+ let h='<div>Enemies per spawn point outside rooms: <input id="spm" type="number" min="1" max="8" value="'+m.spawn_mult+'" style="width:42px"></div>';
+ m.rooms.forEach((r,i)=>{
+  while(r.length<7)r.push(r.length==5?1:1);
+  const n=m.spawns.filter(s=>s[0]!=5&&s[1]>=r[0]&&s[1]<r[2]+1&&s[2]>=r[1]&&s[2]<r[3]+1).length,tot=n*r[6];
+  const w=Math.ceil(tot/3);
+  h+='<div>room '+(i+1)+' ('+r[0]+','+r[1]+') <label><input type="checkbox" data-i="'+i+'" class="rwo" '+(r[5]?'checked':'')+'> waves</label> x<input type="number" min="1" max="8" value="'+r[6]+'" data-i="'+i+'" class="rwm" style="width:40px"> = '+(r[5]?tot+' enemies, '+w+' waves ('+tot+'='+Array.from({length:w},(_,k)=>Math.min(3,tot-3*k)).join('+')+')':'plain spawns')+'</div>';
+ });
+ rw.innerHTML=h;
+ $('spm').onchange=e=>{m.spawn_mult=Math.max(1,Math.min(8,+e.target.value||1));roomPanel.sig=null;draw()};
+ rw.querySelectorAll('.rwo').forEach(e=>e.onchange=()=>{m.rooms[+e.dataset.i][5]=e.checked?1:0;roomPanel.sig=null;draw()});
+ rw.querySelectorAll('.rwm').forEach(e=>e.onchange=()=>{m.rooms[+e.dataset.i][6]=Math.max(1,Math.min(8,+e.value||1));roomPanel.sig=null;draw()});
+}
+function draw(){
+ cx.fillStyle='#0b0d12';cx.fillRect(0,0,cv.width,cv.height);
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){const v=m.tiles[y][x];
+  if(v==0){cx.fillStyle=(x+y)&1?'#1c2030':'#1a1d2b';cx.fillRect(x*C,y*C,C,C);const fv=m.floor_tiles&&m.floor_tiles[y]?m.floor_tiles[y][x]:0;if(fv&&m.floor_set[fv-1]){const im=img('/maps/'+m.floor_set[fv-1]);if(im.complete&&im.naturalWidth)cx.drawImage(im,x*C,y*C,C,C)}}
+  else if(v>=10){cx.fillStyle=DOORCOL[v-10];cx.fillRect(x*C,y*C,C,C);cx.fillStyle='#000';cx.font='bold 9px sans-serif';cx.fillText(v==14?'T':v==10?'A':'K'+(v-10),x*C+2,y*C+11)}
+  else{const o=(m.wall_tex||{})[v];const im=img(o?'/maps/'+o:'/tex/wall_'+v+'.png');if(im.complete&&im.naturalWidth)cx.drawImage(im,x*C,y*C,C,C);else{cx.fillStyle='#555';cx.fillRect(x*C,y*C,C,C)}}
+ }
+ if(m.floor_kind)for(let y=0;y<H;y++)for(let x=0;x<W;x++){const k=m.floor_kind[y][x];if(!k)continue;cx.globalAlpha=.55;cx.fillStyle=FKCOL[k];cx.fillRect(x*C,y*C,C,C);cx.globalAlpha=1;cx.fillStyle='#000';cx.font='bold 9px sans-serif';cx.fillText('.CLAEWDRH'[k]||'?',x*C+4,y*C+11)}
+ if(m.floor_kind){const zz=zones();const seen={};for(let y=0;y<H;y++)for(let x=0;x<W;x++){const z=zz.Z[y*W+x];if(!z)continue;const key=m.floor_kind[y][x]+'_'+z;if(!seen[key]){seen[key]=1;cx.fillStyle='#fff';cx.font='bold 10px sans-serif';cx.fillText(''+z,x*C+C-9,y*C+C-3)}}
+  if(hz){cx.strokeStyle='#fff';cx.lineWidth=2;for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(m.floor_kind[y][x]==hz.k&&zz.Z[y*W+x]==hz.z)cx.strokeRect(x*C+1,y*C+1,C-2,C-2)}}
+ (m.teleports||[]).forEach((p,i)=>{[[p[0],p[1],'in'],[p[2],p[3],'out']].forEach(([x,y,n])=>{cx.strokeStyle=TPCOL[i%4];cx.lineWidth=2;cx.beginPath();cx.arc(x*C+C/2,y*C+C/2,C/2-1,0,7);cx.stroke();cx.fillStyle=TPCOL[i%4];cx.font='bold 8px sans-serif';cx.fillText((i+1)+(n=='in'?'>':'<'),x*C+1,y*C+10)})});
+ if(tpPend){cx.strokeStyle='#fff';cx.setLineDash([2,2]);cx.strokeRect(tpPend[0]*C,tpPend[1]*C,C,C);cx.setLineDash([])}
+ cx.strokeStyle='#ffffff10';cx.lineWidth=1;cx.beginPath();for(let x=0;x<=W;x++){cx.moveTo(x*C+.5,0);cx.lineTo(x*C+.5,H*C)}for(let y=0;y<=H;y++){cx.moveTo(0,y*C+.5);cx.lineTo(W*C,y*C+.5)}cx.stroke();
+ m.rooms.forEach(r=>{cx.strokeStyle=ROOMCOL[r[4]];cx.setLineDash([4,3]);cx.lineWidth=2;cx.strokeRect(r[0]*C+1,r[1]*C+1,(r[2]-r[0]+1)*C-2,(r[3]-r[1]+1)*C-2);cx.setLineDash([]);cx.fillStyle=ROOMCOL[r[4]];cx.font='10px sans-serif';cx.fillText((r[4]==1?'crystal':'pause')+(r.length>5&&!r[5]?' (no waves)':r.length>6?' x'+r[6]:''),r[0]*C+3,r[1]*C+11)});
+ const e=m.exit;cx.strokeStyle='#4fe3ff';cx.lineWidth=2;cx.strokeRect(e[0]*C,e[1]*C,(e[2]-e[0]+1)*C,(e[3]-e[1]+1)*C);cx.fillStyle='#4fe3ff';cx.font='10px sans-serif';cx.fillText('EXIT',e[0]*C+3,e[1]*C+22);
+ const dot=(x,y,col,ch,r)=>{cx.fillStyle=col;cx.beginPath();cx.arc(x*C,y*C,r||5,0,7);cx.fill();cx.fillStyle='#000';cx.font='bold 8px sans-serif';cx.textAlign='center';cx.fillText(ch,x*C,y*C+3);cx.textAlign='left'};
+ m.items.forEach(i=>{dot(i[1],i[2],KIND_COL[i[0]]||'#fff',(lib.items[i[0]]||'?')[0].toUpperCase());if(i[0]>=18){cx.fillStyle='#fff';cx.font='bold 9px sans-serif';cx.fillText(i[3]>0?'#'+i[3]:'#all',i[1]*C+6,i[2]*C-5)}});
+ m.spawns.forEach(s=>{cx.fillStyle=s[0]==5?'#ff3030':'#ff8a8a';cx.beginPath();const x=s[1]*C,y=s[2]*C;cx.moveTo(x,y-6);cx.lineTo(x+6,y+5);cx.lineTo(x-6,y+5);cx.fill();cx.fillStyle='#000';cx.font='bold 8px sans-serif';cx.textAlign='center';cx.fillText(s[0]==5?'B':s[0]+1,x,y+4);cx.textAlign='left'});
+ m.ghosts.forEach(g=>dot(g[0],g[1],'#c58bff','G',6));
+ dot(m.start[0],m.start[1],'#6fd38a','S',7);dot(m.plate[0],m.plate[1],'#ff7bd5','TR',6);dot(m.look[0],m.look[1],'#ffe14f','L',6);
+ if(drag&&drag.rect){const r=drag.rect;cx.strokeStyle='#fff';cx.setLineDash([3,3]);cx.strokeRect(r[0]*C,r[1]*C,(r[2]-r[0]+1)*C,(r[3]-r[1]+1)*C);cx.setLineDash([])}
+ roomPanel();
+}
+function cell(ev){const r=cv.getBoundingClientRect();return[Math.max(0,Math.min(W-1,Math.floor((ev.clientX-r.left)/C))),Math.max(0,Math.min(H-1,Math.floor((ev.clientY-r.top)/C)))]}
+function nearest(arr,x,y,xi){let b=-1,bd=.8;arr.forEach((o,i)=>{const d=Math.hypot(o[xi]-x,o[xi+1]-y);if(d<bd){bd=d;b=i}});return b}
+function eraseAt(x,y){const px=x+.5,py=y+.5;
+ let i=nearest(m.items,px,py,1);if(i>=0){m.items.splice(i,1);return}
+ i=nearest(m.spawns,px,py,1);if(i>=0){m.spawns.splice(i,1);return}
+ i=nearest(m.ghosts,px,py,0);if(i>=0){m.ghosts.splice(i,1);return}
+ i=m.rooms.findIndex(r=>x==r[0]&&y==r[1]);if(i>=0){m.rooms.splice(i,1);return}   // a room goes with a click on its top-left corner
+ i=(m.teleports||[]).findIndex(p=>(p[0]==x&&p[1]==y)||(p[2]==x&&p[3]==y));if(i>=0){m.teleports.splice(i,1);return}
+ if(m.floor_kind&&m.floor_kind[y][x]){m.floor_kind[y][x]=0;return}
+ if(m.tiles[y][x]!=0)m.tiles[y][x]=0}
+function setFl(x,y,v){if(!m.floor_tiles)m.floor_tiles=Array.from({length:H},()=>Array(W).fill(0));m.floor_tiles[y][x]=v}
+function apply(x,y,first){const t=tool,px=x+.5,py=y+.5;
+ if(t.t=='fk'){if(m.tiles[y][x]==0){m.floor_kind=m.floor_kind||Array.from({length:H},()=>Array(W).fill(0));m.floor_kind[y][x]=t.v}return}
+ if(t.t=='tp'){if(!first||m.tiles[y][x]!=0)return;if(!tpPend)tpPend=[x,y];else{m.teleports=m.teleports||[];if(m.teleports.length>=4){alert('at most 4 teleport pairs');tpPend=null;return}m.teleports.push([tpPend[0],tpPend[1],x,y]);tpPend=null}return}
+ if(t.t=='fl'){if(m.tiles[y][x]==0)setFl(x,y,t.v);return}
+ if(t.t=='tile'){m.tiles[y][x]=t.v;return}
+ if(!first)return;
+ if(t.t=='item'&&t.k>=18){const j=nearest(m.items,px,py,1),zv=Math.max(0,Math.min(8,+$('trgZ').value||0));
+  if(j>=0&&m.items[j][0]>=18){m.items[j][3]=zv;selTrg=j;return}                 // clicking an existing trigger re-assigns its zone
+  m.items.push([t.k,px,py,zv]);selTrg=m.items.length-1}
+ else if(t.t=='item')m.items.push([t.k,px,py]);else if(t.t=='spawn')m.spawns.push([t.c,px,py]);
+ else if(t.t=='start')m.start=[px,py];else if(t.t=='plate')m.plate=[px,py-.15];else if(t.t=='look')m.look=[px,py];
+ else if(t.t=='ghost'){if(m.ghosts.length>=3)m.ghosts.shift();m.ghosts.push([px,py])}
+ else if(t.t=='erase')eraseAt(x,y)}
+cv.oncontextmenu=e=>e.preventDefault();
+cv.onmousedown=e=>{const [x,y]=cell(e);snap();
+ if(e.button==2){eraseAt(x,y);draw();return}
+ const t=tool;
+ if(t.t=='exit'||t.t=='room1'||t.t=='room2'||((t.t=='tile'||t.t=='fl'||t.t=='fk')&&e.shiftKey)){drag={x0:x,y0:y,rect:[x,y,x,y]};return}
+ drag={paint:true};apply(x,y,true);draw()};
+cv.onmousemove=e=>{const [x,y]=cell(e);$('pos').textContent=`x ${x}  y ${y}`;
+ if(!drag)return;if(drag.paint&&(tool.t=='tile'||tool.t=='fl'||tool.t=='fk')){apply(x,y,false);draw()}
+ else if(drag.rect){drag.rect=[Math.min(drag.x0,x),Math.min(drag.y0,y),Math.max(drag.x0,x),Math.max(drag.y0,y)];draw()}};
+window.onmouseup=()=>{if(drag&&drag.rect){const r=drag.rect,t=tool;
+  if(t.t=='exit')m.exit=r.slice();else if(t.t=='room1')m.rooms.push([...r,1]);else if(t.t=='room2')m.rooms.push([...r,2]);
+  else if(t.t=='tile')for(let y=r[1];y<=r[3];y++)for(let x=r[0];x<=r[2];x++)m.tiles[y][x]=t.v
+  else if(t.t=='fk')for(let y=r[1];y<=r[3];y++)for(let x=r[0];x<=r[2];x++)if(m.tiles[y][x]==0){m.floor_kind=m.floor_kind||Array.from({length:H},()=>Array(W).fill(0));m.floor_kind[y][x]=t.v}
+  else if(t.t=='fl')for(let y=r[1];y<=r[3];y++)for(let x=r[0];x<=r[2];x++)if(m.tiles[y][x]==0)setFl(x,y,t.v)}
+ drag=null;draw()};
+function doUndo(){if(undo.length){m=JSON.parse(undo.pop());buildSide();draw()}}
+window.onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key=='z'){e.preventDefault();doUndo()}};
+function show(res){$('chk').innerHTML=res.map(r=>`<div class="${r[0]}">${r[1]}</div>`).join('')}
+async function validate(){show((await api('/api/validate',{method:'POST',body:JSON.stringify(m)})).checks)}
+async function save(){const r=await api('/api/map?stage='+stage,{method:'POST',body:JSON.stringify(m)});if(r.error){alert(r.error);return}show([['ok','saved maps/stage'+stage+'.json'],...r.checks]);lib=await api('/api/lib')}
+init();
+</script></body></html>

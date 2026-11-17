@@ -1,0 +1,375 @@
+; ============================================================================
+; gsu_ray.sfx - Super FX raycaster for the SNES (OpenSNES, GSU_BANK build)
+;
+; One job = one frame (256x128, 4bpp PLOT bitmap, 2 px wide columns):
+;   1. floor   (perspective spans, textured, distance lit)
+;   2. ceiling (same maths mirrored)
+;   3. walls   (DDA raycast, 128 columns, textured, distance lit, two
+;               light directions = pseudo normal mapping through the LUT)
+; The 65816 writes the camera into Game Pak RAM ($70:0000..) before the job
+; and reads the wall distance of every column (ZBUF) after it, for sprites.
+;
+; Game Pak RAM map: see res/layout.inc (tables built by tools/gen_tables.py).
+;
+; Rules kept: NOP in every branch delay slot, NOP after loads, RPIX at the end.
+; ============================================================================
+.include "memmap_gsu.inc"
+.include "res/layout.inc"
+.EQU V_COSP2 $0A
+
+.BANK 0 SLOT 0
+.ORG 0
+
+; fast variables, byte addresses in $70:0000.. (LMS/SMS reach $0000-$01FE)
+.EQU V_POSX  $00      ; camera x, 8.8 tiles
+.EQU V_POSY  $02      ; camera y, 8.8 tiles
+.EQU V_ANG   $04      ; view angle, 512 = full turn
+.EQU V_HOR   $06      ; horizon line (screen y), moved by pitch and bob
+.EQU V_ZS    $08      ; camera height offset, 8.8 tiles << 8 (|zs| < 128)
+.EQU V_COSP  $0A
+.EQU V_SINP  $0C
+.EQU V_TEXF  $0E      ; floor texture address
+.EQU V_TEXC  $10      ; ceiling texture address
+.EQU V_A     $12
+.EQU V_SIN   $14
+.EQU V_COS   $16
+.EQU V_WID   $18
+.EQU V_K     $1A
+.EQU V_KMAX  $1C
+
+gsu_start:
+    IBT R0, #0
+    RAMB                    ; Game Pak RAM bank 0 ($70:0000-$FFFF)
+    IBT R0, #0
+    CMODE                   ; opaque plot, no dither
+
+    ; cos and sin of the view angle (1.15)
+    LMS R0, (V_ANG)
+    ADD R0
+    IWT R6, #SIN
+    ADD R6
+    MOVE R11, R0
+    LDW (R11)
+    NOP
+    SMS (V_SINP), R0
+    LMS R0, (V_ANG)
+    IWT R6, #128
+    ADD R6
+    IWT R6, #$01FF
+    AND R6
+    ADD R0
+    IWT R6, #SIN
+    ADD R6
+    MOVE R11, R0
+    LDW (R11)
+    NOP
+    SMS (V_COSP), R0
+
+; ----------------------------------------------------------------------------
+; FLOOR: rows y = H + k, k = 0 .. 127-H
+; ----------------------------------------------------------------------------
+pass_floor:
+    IBT R0, #0
+    SMS (V_K), R0
+    IWT R0, #103
+    LMS R6, (V_HOR)
+    SUB R6
+    SMS (V_KMAX), R0
+_frow:
+    LMS R0, (V_K)
+    ADD R0
+    ADD R0
+    ADD R0
+    IWT R6, #ROWT
+    ADD R6
+    MOVE R11, R0
+    LDW (R11)
+    NOP
+    MOVE R7, R0                 ; D' of this row
+    INC R11
+    INC R11                     ; -> floor LUT address
+    LMS R6, (V_COSP)
+    FROM R7
+    FMULT
+    MOVE R1, R0                 ; a_c = D' * cos
+    LMS R6, (V_SINP)
+    FROM R7
+    FMULT
+    MOVE R2, R0                 ; a_s = D' * sin
+    ADD R0
+    NOT
+    INC R0
+    MOVE R7, R0                 ; dfx = -2 a_s   (4 px = 2 columns)
+    MOVE R0, R1
+    ADD R0
+    MOVE R9, R0                 ; dfy =  2 a_c
+    MOVE R0, R2
+    ADD R0
+    ADD R0
+    ADD R0
+    MOVE R12, R0
+    ADD R0
+    ADD R12
+    ADD R0
+    ADD R12
+    MOVE R13, R0                ; 56 a_s
+    MOVE R0, R1
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R13
+    MOVE R3, R0                 ; 64 a_c + 56 a_s  (focal 128, half width 112)
+    LMS R0, (V_POSX)
+    LOB
+    SWAP
+    ADD R3
+    MOVE R3, R0                 ; fx0
+    MOVE R0, R1
+    ADD R0
+    ADD R0
+    ADD R0
+    MOVE R12, R0
+    ADD R0
+    ADD R12
+    ADD R0
+    ADD R12
+    MOVE R13, R0                ; 56 a_c
+    MOVE R0, R2
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    SUB R13
+    MOVE R5, R0                 ; 64 a_s - 56 a_c
+    LMS R0, (V_POSY)
+    LOB
+    SWAP
+    ADD R5
+    MOVE R5, R0                 ; fy0
+    LDW (R11)
+    NOP
+    MOVE R6, R0                 ; LUT base of the row
+    LMS R8, (V_TEXF)
+    IWT R10, #$00F0
+    IBT R1, #0
+    LMS R2, (V_K)
+    LMS R0, (V_HOR)
+    ADD R2
+    MOVE R2, R0                 ; y = H + k
+    IBT R4, #56
+_fch:
+    FROM R3
+    HIB
+    LSR
+    LSR
+    LSR
+    LSR
+    MOVE R11, R0
+    FROM R5
+    HIB
+    AND R10
+    OR R11
+    ADD R8
+    LDB (R0)
+    NOP
+    ADD R6
+    LDB (R0)
+    NOP
+    COLOR
+    PLOT
+    PLOT
+    PLOT
+    PLOT
+    WITH R1
+    SUB #4
+    INC R2
+    PLOT
+    PLOT
+    PLOT
+    PLOT
+    DEC R2
+    WITH R3
+    ADD R7
+    WITH R5
+    ADD R9
+    DEC R4
+    BNE _fch
+    NOP
+    LMS R0, (V_K)
+    INC R0
+    INC R0
+    SMS (V_K), R0
+    LMS R6, (V_KMAX)
+    FROM R6
+    SUB R0
+    BMI _fdone
+    NOP
+    IWT R15, #_frow
+    NOP
+_fdone:
+
+; ----------------------------------------------------------------------------
+; CEILING: rows y = H - k, k = 1 .. H
+; ----------------------------------------------------------------------------
+pass_ceil:
+    IBT R0, #1
+    SMS (V_K), R0
+    LMS R0, (V_HOR)
+    SMS (V_KMAX), R0
+_crow:
+    LMS R0, (V_K)
+    ADD R0
+    ADD R0
+    ADD R0
+    IWT R6, #ROWT
+    ADD R6
+    MOVE R11, R0
+    INC R11
+    INC R11
+    INC R11
+    INC R11
+    INC R11
+    INC R11
+    LDW (R11)                   ; ceiling D' (stored in the pad word)
+    NOP
+    MOVE R7, R0
+    DEC R11
+    DEC R11                     ; -> ceiling LUT address
+    LMS R6, (V_COSP)
+    FROM R7
+    FMULT
+    MOVE R1, R0
+    LMS R6, (V_SINP)
+    FROM R7
+    FMULT
+    MOVE R2, R0
+    ADD R0
+    NOT
+    INC R0
+    MOVE R7, R0
+    MOVE R0, R1
+    ADD R0
+    MOVE R9, R0
+    MOVE R0, R2
+    ADD R0
+    ADD R0
+    ADD R0
+    MOVE R12, R0
+    ADD R0
+    ADD R12
+    ADD R0
+    ADD R12
+    MOVE R13, R0
+    MOVE R0, R1
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R13
+    MOVE R3, R0
+    LMS R0, (V_POSX)
+    LOB
+    SWAP
+    ADD R3
+    MOVE R3, R0
+    MOVE R0, R1
+    ADD R0
+    ADD R0
+    ADD R0
+    MOVE R12, R0
+    ADD R0
+    ADD R12
+    ADD R0
+    ADD R12
+    MOVE R13, R0
+    MOVE R0, R2
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    ADD R0
+    SUB R13
+    MOVE R5, R0
+    LMS R0, (V_POSY)
+    LOB
+    SWAP
+    ADD R5
+    MOVE R5, R0
+    LDW (R11)
+    NOP
+    MOVE R6, R0
+    LMS R8, (V_TEXC)
+    IWT R10, #$00F0
+    IBT R1, #0
+    LMS R2, (V_K)
+    LMS R0, (V_HOR)
+    SUB R2
+    MOVE R2, R0                 ; y = H - k
+    IBT R4, #56
+_cch:
+    FROM R3
+    HIB
+    LSR
+    LSR
+    LSR
+    LSR
+    MOVE R11, R0
+    FROM R5
+    HIB
+    AND R10
+    OR R11
+    ADD R8
+    LDB (R0)
+    NOP
+    ADD R6
+    LDB (R0)
+    NOP
+    COLOR
+    PLOT
+    PLOT
+    PLOT
+    PLOT
+    WITH R1
+    SUB #4
+    DEC R2
+    PLOT
+    PLOT
+    PLOT
+    PLOT
+    INC R2
+    WITH R3
+    ADD R7
+    WITH R5
+    ADD R9
+    DEC R4
+    BNE _cch
+    NOP
+    LMS R0, (V_K)
+    INC R0
+    INC R0
+    SMS (V_K), R0
+    LMS R6, (V_KMAX)
+    FROM R6
+    SUB R0
+    BMI _cdone
+    NOP
+    IWT R15, #_crow
+    NOP
+_cdone:
+
+_end:
+    IBT R1, #0
+    IBT R2, #0
+    RPIX                        ; flush the pixel cache into Game Pak RAM
+    NOP
+    NOP
+    STOP
+    NOP

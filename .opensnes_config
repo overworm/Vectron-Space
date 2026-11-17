@@ -1,0 +1,1 @@
+[cc 3099155920174] $13 $0B $00 $06 $02 [SPACE RAYCAST FPS] [-D ROM_BANKS_VAL=64 -D 'ASSET_BANKS_VAL="63-1"'   -D SUPERFX   -D RAM_CODE -D RAM_CODE_ORG_VAL=64768] [] [background background_scroll console dma hdma input input_pad math_sqrt snesmod sprite sprite_meta sprite_oamset sprite_world superfx] [/root/GAMEDEV/snes/opensnes/lib/build/superfx] [1 40]

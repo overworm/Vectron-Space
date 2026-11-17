@@ -1,0 +1,123 @@
+; ============================================================================
+; gsu_s.sfx - close-up enemy: one scaled sprite drawn on top of the walls.
+; The CPU fills the variables below (see main.c, gs_draw) and starts the job once per sprite.
+; Source: packed 4bpp, 2048 bytes: byte [P*64 + row] = col 2P (low nibble) | col 2P+1 (high nibble)
+; Every destination column is 2 px wide (like the walls); it is skipped where the wall is nearer (ZBUF).
+; ============================================================================
+.include "memmap_gsu.inc"
+.include "res/layout.inc"
+
+.BANK 0 SLOT 0
+.ORG 0
+
+.EQU S_C0   $40      ; first column pair (0..127)
+.EQU S_NC   $42      ; number of column pairs
+.EQU S_U0   $44      ; source column, 8.8
+.EQU S_UST  $46      ; its step per column pair
+.EQU S_V0   $48      ; source row, 8.8
+.EQU S_VST  $4A      ; its step per row
+.EQU S_YS   $4C      ; first row
+.EQU S_NR   $4E      ; rows
+.EQU S_SRC  $50      ; Game Pak RAM address of the frame
+.EQU S_F    $52      ; depth of the enemy
+gsu_start:
+    LMS R13, (S_C0)
+    LMS R6, (S_NC)
+    LMS R3, (S_U0)
+    LMS R12, (S_UST)
+    LMS R7, (S_VST)
+_scol:
+    MOVE R0, R13
+    ADD R0
+    IWT R11, #ZBUF
+    ADD R11
+    MOVE R11, R0
+    LDW (R11)
+    NOP
+    LMS R8, (S_F)
+    SUB R8                      ; wall distance - enemy distance
+    BMI _next
+    NOP
+    BEQ _next
+    NOP
+    FROM R3
+    HIB
+    AND #1
+    MOVE R9, R0                 ; odd source column: high nibble
+    FROM R3
+    HIB
+    LSR
+    SWAP
+    LSR
+    LSR                         ; pair * 64
+    LMS R5, (S_SRC)
+    ADD R5
+    MOVE R5, R0
+    LMS R10, (S_V0)
+    LMS R2, (S_YS)
+    LMS R4, (S_NR)
+    MOVE R0, R13
+    ADD R0
+    MOVE R1, R0
+    MOVE R0, R9
+    ADD #0
+    BNE _hi
+    NOP
+_lo:
+    FROM R10
+    HIB
+    ADD R5
+    LDB (R0)
+    NOP
+    AND #15
+    COLOR
+    PLOT
+    PLOT
+    WITH R1
+    SUB #2
+    INC R2
+    WITH R10
+    ADD R7
+    DEC R4
+    BNE _lo
+    NOP
+    BRA _next
+    NOP
+_hi:
+    FROM R10
+    HIB
+    ADD R5
+    LDB (R0)
+    NOP
+    LSR
+    LSR
+    LSR
+    LSR
+    COLOR
+    PLOT
+    PLOT
+    WITH R1
+    SUB #2
+    INC R2
+    WITH R10
+    ADD R7
+    DEC R4
+    BNE _hi
+    NOP
+_next:
+    WITH R3
+    ADD R12
+    INC R13
+    DEC R6
+    BEQ _end
+    NOP
+    IWT R15, #_scol
+    NOP
+_end:
+    IBT R1, #0
+    IBT R2, #0
+    RPIX
+    NOP
+    NOP
+    STOP
+    NOP
